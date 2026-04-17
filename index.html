@@ -1378,6 +1378,13 @@ function renderOverview() {
       Navigate each tab to inspect raw readings, flag decisions, 25% rule results,
       deviation checks, and the final clean dataset. Export buttons are available at each stage.
     </div>
+    <div class="ov-note" style="background:#eff6ff;border-color:#93c5fd;color:#1e3a5f">
+      <strong>GitHub sync:</strong> Flag decisions and manual exclusions are saved in your local browser only.
+      To make GitHub Pages show the same deviation results, click the button below, then replace
+      <code>decisions.json</code> in the repo and push.
+      <br><br>
+      <button class="dev-export-btn" onclick="publishDecisions()">↓ Download decisions.json</button>
+    </div>
 
     <div class="ov-section-title">Data Processing Pipeline</div>
     <div class="ov-pipeline">
@@ -2124,6 +2131,20 @@ function loadDecisions(savedDecisions) {
 }
 
 // Export current decisions + manual exclusions to decisions.json for committing
+
+function publishDecisions() {
+  const payload = JSON.stringify({
+    decisions:     DECISIONS,
+    clean_removed: CLEAN_REMOVED,
+    exported_at:   new Date().toISOString(),
+  }, null, 2);
+  const blob = new Blob([payload], { type: 'application/json' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = 'decisions.json';
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+}
 
 function setDecision(id, value) {
   DECISIONS[id] = value;
