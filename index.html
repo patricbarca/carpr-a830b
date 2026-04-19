@@ -116,6 +116,45 @@ header .sub { font-size: 10px; color: #94a3b8; }
   margin-bottom: 16px;
 }
 
+/* ── Snapshots ──────────────────────────────────────────────────────────────*/
+.snap-panel {
+  background: #fff; border: 1px solid #e2e8f0; border-radius: 10px;
+  padding: 16px; margin-bottom: 24px;
+}
+.snap-save-row {
+  display: flex; gap: 8px; align-items: center; margin-bottom: 12px;
+}
+.snap-name-input {
+  flex: 1; padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px;
+  font-size: 12px; color: #1e293b; background: #f8fafc;
+}
+.snap-name-input:focus { outline: none; border-color: #3b82f6; background: #fff; }
+.snap-save-btn {
+  padding: 6px 14px; background: #3b82f6; color: #fff; border: none;
+  border-radius: 6px; font-size: 11px; font-weight: 700; cursor: pointer;
+}
+.snap-save-btn:hover { background: #2563eb; }
+.snap-list { display: flex; flex-direction: column; gap: 6px; }
+.snap-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 12px; background: #f8fafc; border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+.snap-item-name { flex: 1; font-size: 12px; font-weight: 700; color: #1e293b; }
+.snap-item-meta { font-size: 10px; color: #94a3b8; white-space: nowrap; }
+.snap-item-btns { display: flex; gap: 4px; }
+.snap-btn {
+  padding: 3px 9px; border-radius: 5px; font-size: 10px; font-weight: 700;
+  cursor: pointer; border: 1px solid currentColor;
+}
+.snap-btn-load   { color: #2563eb; background: #eff6ff; }
+.snap-btn-load:hover { background: #dbeafe; }
+.snap-btn-export { color: #059669; background: #ecfdf5; }
+.snap-btn-export:hover { background: #d1fae5; }
+.snap-btn-delete { color: #dc2626; background: #fef2f2; }
+.snap-btn-delete:hover { background: #fee2e2; }
+.snap-empty { font-size: 11px; color: #94a3b8; font-style: italic; text-align: center; padding: 12px 0; }
+
 /* ══════════════════════════════════════════════════════════════════════════════
    RAW DATA VIEW
 ══════════════════════════════════════════════════════════════════════════════*/
@@ -1378,14 +1417,6 @@ function renderOverview() {
       Navigate each tab to inspect raw readings, flag decisions, 25% rule results,
       deviation checks, and the final clean dataset. Export buttons are available at each stage.
     </div>
-    <div class="ov-note" style="background:#eff6ff;border-color:#93c5fd;color:#1e3a5f">
-      <strong>GitHub sync:</strong> Flag decisions and manual exclusions are saved in your local browser only.
-      To make GitHub Pages show the same deviation results, click the button below, then replace
-      <code>decisions.json</code> in the repo and push.
-      <br><br>
-      <button class="dev-export-btn" onclick="publishDecisions()">↓ Download decisions.json</button>
-    </div>
-
     <div class="ov-section-title">Data Processing Pipeline</div>
     <div class="ov-pipeline">
       <div class="ov-step">
@@ -1502,6 +1533,18 @@ function renderOverview() {
           </ul>
         </div>`;
       }).join('')}
+    </div>
+
+    <div class="ov-section-title">Saved Configurations</div>
+    <div class="snap-panel">
+      <div class="snap-save-row">
+        <input class="snap-name-input" id="snap-name-input" type="text"
+               placeholder="e.g. Simulation 1 — initial review" maxlength="80"
+               onkeydown="if(event.key==='Enter')saveSnapshot()">
+        <button class="snap-save-btn" onclick="saveSnapshot()">Save current state</button>
+        <button class="snap-save-btn" onclick="importSnapshotFile()" style="background:#6366f1">↑ Import JSON</button>
+      </div>
+      <div class="snap-list" id="snap-list">${renderSnapshotList()}</div>
     </div>`;
 }
 
@@ -2116,6 +2159,150 @@ function renderInvChart(item) {
 }
 
 // ─── Decisions ────────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+// SNAPSHOTS  (named configurations stored in localStorage)
+// ══════════════════════════════════════════════════════════════════════════════
+const SNAP_KEY = 'carpr_a830b_snapshots';
+
+function getSnapshots() {
+  try { return JSON.parse(localStorage.getItem(SNAP_KEY) || '[]'); } catch { return []; }
+}
+
+function saveSnapshots(list) {
+  localStorage.setItem(SNAP_KEY, JSON.stringify(list));
+}
+
+function renderSnapshotList() {
+  const list = getSnapshots();
+  if (!list.length) return '<div class="snap-empty">No saved configurations yet.</div>';
+  return list.map((s, i) => `
+    <div class="snap-item" id="snap-item-${i}">
+      <div>
+        <div class="snap-item-name">${escHtml(s.name)}</div>
+        <div class="snap-item-meta">Saved ${s.saved_at} &nbsp;·&nbsp;
+          ${Object.keys(s.decisions).length} flag decisions &nbsp;·&nbsp;
+          ${Object.keys(s.clean_removed).length} manual excl.</div>
+      </div>
+      <div class="snap-item-btns">
+        <button class="snap-btn snap-btn-load"   onclick="loadSnapshot(${i})">Load</button>
+        <button class="snap-btn snap-btn-export" onclick="exportSnapshot(${i})">↓ JSON</button>
+        <button class="snap-btn snap-btn-delete" onclick="deleteSnapshot(${i})">Delete</button>
+      </div>
+    </div>`).join('');
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function refreshSnapshotList() {
+  const el = document.getElementById('snap-list');
+  if (el) el.innerHTML = renderSnapshotList();
+}
+
+function saveSnapshot() {
+  const input = document.getElementById('snap-name-input');
+  const name  = (input ? input.value.trim() : '') || `Configuration ${new Date().toLocaleString()}`;
+  const list  = getSnapshots();
+  list.unshift({
+    name,
+    saved_at:     new Date().toLocaleString(),
+    decisions:    JSON.parse(JSON.stringify(DECISIONS)),
+    clean_removed: JSON.parse(JSON.stringify(CLEAN_REMOVED)),
+  });
+  saveSnapshots(list);
+  if (input) input.value = '';
+  refreshSnapshotList();
+}
+
+function loadSnapshot(i) {
+  const list = getSnapshots();
+  const snap = list[i];
+  if (!snap) return;
+  if (!confirm(`Load "${snap.name}"?\n\nThis will replace your current flag decisions and manual exclusions.`)) return;
+  DECISIONS     = JSON.parse(JSON.stringify(snap.decisions));
+  CLEAN_REMOVED = JSON.parse(JSON.stringify(snap.clean_removed));
+  localStorage.setItem('carpr_a830b_decisions',     JSON.stringify(DECISIONS));
+  localStorage.setItem('carpr_a830b_clean_removed', JSON.stringify(CLEAN_REMOVED));
+  RULE25_CACHE = {};
+  computeDeviationExclusions();
+  // Re-render the currently visible view (overview always re-renders to update stats)
+  if (currentView === 'overview')    renderOverview();
+  else {
+    renderOverview(); // keep stats fresh even when not visible
+    if (currentView === 'raw')         { renderRawChart(); renderFlagPanel(); }
+    if (currentView === 'investigate') renderInvestigateView();
+    if (currentView === 'redundant')   renderRedundantView();
+    if (currentView === 'rule25')      renderRule25View();
+    if (currentView === 'deviation')   renderDeviationView();
+    if (currentView === 'clean')       renderCleanAll();
+    if (currentView === 'analysis')    renderAnalysisView();
+    if (currentView === 'plots')       renderPlotsView();
+  }
+  alert(`Loaded: ${snap.name}`);
+}
+
+function deleteSnapshot(i) {
+  const list = getSnapshots();
+  const snap = list[i];
+  if (!snap) return;
+  if (!confirm(`Delete "${snap.name}"?`)) return;
+  list.splice(i, 1);
+  saveSnapshots(list);
+  refreshSnapshotList();
+}
+
+function exportSnapshot(i) {
+  const list = getSnapshots();
+  const snap = list[i];
+  if (!snap) return;
+  const payload = JSON.stringify({
+    name:         snap.name,
+    saved_at:     snap.saved_at,
+    decisions:    snap.decisions,
+    clean_removed: snap.clean_removed,
+    exported_at:  new Date().toISOString(),
+  }, null, 2);
+  const blob = new Blob([payload], { type: 'application/json' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  const safeName = snap.name.replace(/[^a-zA-Z0-9_\- ]/g,'').replace(/\s+/g,'_').slice(0,40);
+  a.href = url; a.download = `${nowTs()}_${safeName}.json`;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+
+// Import a previously exported snapshot JSON file
+function importSnapshotFile() {
+  const input = document.createElement('input');
+  input.type = 'file'; input.accept = '.json';
+  input.onchange = e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const snap = JSON.parse(ev.target.result);
+        if (!snap.decisions || !snap.clean_removed) throw new Error('Invalid snapshot file');
+        const list = getSnapshots();
+        list.unshift({
+          name:          snap.name || file.name,
+          saved_at:      snap.saved_at || new Date().toLocaleString(),
+          decisions:     snap.decisions,
+          clean_removed: snap.clean_removed,
+        });
+        saveSnapshots(list);
+        refreshSnapshotList();
+        alert(`Imported: ${snap.name || file.name}`);
+      } catch(err) {
+        alert('Could not import: ' + err.message);
+      }
+    };
+    reader.readAsText(file);
+  };
+  input.click();
+}
+
 function loadDecisions(savedDecisions) {
   // Base: committed decisions.json (authoritative published state)
   if (savedDecisions) {
